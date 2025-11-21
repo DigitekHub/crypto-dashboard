@@ -4,12 +4,11 @@
 <meta charset="UTF-8">
 <title>Crypto Dashboard</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 body { font-family: Arial,sans-serif; margin:0; padding:20px; background:#f5f5f5; color:#333; transition:0.3s; }
 body.dark { background:#121212; color:#eee; }
 h1{text-align:center;color:#ff9900;margin-bottom:15px;}
-table{width:100%;border-collapse:collapse;margin-bottom:20px;background:#fff;border-radius:10px;}
+table{width:100%;border-collapse:collapse;margin-bottom:10px;background:#fff;border-radius:10px;}
 body.dark table{background:#1e1e1e;color:#eee;}
 th, td{padding:8px;text-align:center;border-bottom:1px solid #ddd;}
 body.dark th, body.dark td{border-bottom:1px solid #555;}
@@ -18,12 +17,18 @@ body.dark tr:hover{background-color:#333;}
 #floatingMovers{position:fixed;bottom:20px;right:20px;width:250px;background:#fff;border-radius:10px;box-shadow:0 4px 12px rgba(0,0,0,0.2);padding:10px;font-size:14px;z-index:9999;transition:0.3s;}
 body.dark #floatingMovers{background:#1e1e1e;color:#eee;}
 .controls{text-align:center;margin-bottom:15px;}
-select, button{padding:8px 12px;font-size:16px;border-radius:8px;border:1px solid #ccc;cursor:pointer;}
-button{margin-left:10px;}
+select, button, input{padding:8px 12px;font-size:16px;border-radius:8px;border:1px solid #ccc;cursor:pointer;}
+button{margin-left:5px;}
+input{width:200px;}
 a{color:#ff9900;text-decoration:none;}
 .ad-slot{margin:20px auto;text-align:center;}
 #sideBanner{position:fixed;top:100px;right:0;width:160px;background:#f0f0f0;padding:10px;border-left:1px solid #ccc;}
 body.dark #sideBanner{background:#1e1e1e;color:#eee;border-left:1px solid #555;}
+.widget-header{display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;}
+.widget-header h3{margin:0;}
+.widget-header button{cursor:pointer; border:none; background:transparent; font-size:16px;}
+.pagination{margin-top:5px;text-align:center;}
+.pagination button{margin:2px;}
 </style>
 </head>
 <body>
@@ -38,13 +43,14 @@ body.dark #sideBanner{background:#1e1e1e;color:#eee;border-left:1px solid #555;}
   <script>(adsbygoogle = window.adsbygoogle || []).push({});</script>
 </div>
 
-<h1>Top 50 Crypto Dashboard</h1>
+<h1>Crypto Dashboard</h1>
 
 <!-- Controls -->
 <div class="controls">
   <label for="currency">Currency:</label>
   <select id="currency"></select>
   <button id="themeToggle">Toggle Dark/Light Mode</button>
+  <input type="text" id="searchInput" placeholder="Search crypto by name...">
 </div>
 
 <!-- Leaderboard (Top 10 by Market Cap) -->
@@ -65,16 +71,33 @@ body.dark #sideBanner{background:#1e1e1e;color:#eee;border-left:1px solid #555;}
 <!-- All Cryptos -->
 <h2>All Cryptos</h2>
 <table id="cryptoTable"><thead><tr><th>#</th><th>Name</th><th>Price</th><th>24h</th><th>7d</th><th>30d</th></tr></thead><tbody></tbody></table>
+<div class="pagination">
+  <button id="prevPage">Previous</button>
+  <span id="pageInfo">Page 1</span>
+  <button id="nextPage">Next</button>
+</div>
 
 <!-- Floating Top Movers -->
 <div id="floatingMovers">
-  <h3>Top Movers</h3>
+  <div class="widget-header">
+    <h3>Top Movers</h3>
+    <div>
+      <button class="minimize">−</button>
+      <button class="close">×</button>
+    </div>
+  </div>
   <ul></ul>
 </div>
 
 <!-- Side Banner for Advertisers -->
 <div id="sideBanner">
-  <h3>Advertise Here</h3>
+  <div class="widget-header">
+    <h3>Advertise Here</h3>
+    <div>
+      <button class="minimize">−</button>
+      <button class="close">×</button>
+    </div>
+  </div>
   <p>Place your banner or link</p>
   <div class="ad-slot">
     <ins class="adsbygoogle"
@@ -102,38 +125,46 @@ const losersTable=document.getElementById("losersTable").querySelector("tbody");
 const floatingMovers=document.getElementById("floatingMovers").querySelector("ul");
 const leaderboardTable=document.getElementById("leaderboard").querySelector("tbody");
 const newsFeed=document.getElementById("cryptoNewsFeed");
+const searchInput=document.getElementById("searchInput");
+const pageInfo=document.getElementById("pageInfo");
+const prevBtn=document.getElementById("prevPage");
+const nextBtn=document.getElementById("nextPage");
 
 const currencies=["usd","eur","gbp"];
 currencies.forEach(c=>{const o=document.createElement("option");o.value=c;o.textContent=c.toUpperCase();currencySelect.appendChild(o);});
 
-currencySelect.addEventListener("change",fetchCryptoData);
+currencySelect.addEventListener("change",()=>{currentPage=1; fetchCryptoData();});
 document.getElementById("themeToggle").addEventListener("click",()=>{document.body.classList.toggle("dark");localStorage.setItem("theme",document.body.classList.contains("dark")?"dark":"light");});
 if(localStorage.getItem("theme")==="dark") document.body.classList.add("dark");
+
+let allCoinsGlobal=[];
+let currentPage=1;
+const pageSize=50;
 
 async function fetchCryptoData(){
   const cur=currencySelect.value;
   cryptoTable.innerHTML=""; gainersTable.innerHTML=""; losersTable.innerHTML=""; floatingMovers.innerHTML=""; leaderboardTable.innerHTML="";
+  allCoinsGlobal=[];
 
   try{
-    const res=await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=${cur}&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h,7d,30d`);
-    const data=await res.json();
+    // Fetch top 500 coins (5 pages × 100 coins)
+    for(let page=1; page<=5; page++){
+      const res=await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=${cur}&order=market_cap_desc&per_page=100&page=${page}&sparkline=false&price_change_percentage=24h,7d,30d`);
+      const data=await res.json();
+      allCoinsGlobal=allCoinsGlobal.concat(data);
+    }
 
     // Leaderboard (top 10)
-    data.slice(0,10).forEach(c=>{
+    allCoinsGlobal.slice(0,10).forEach(c=>{
       const tr=document.createElement("tr");
       tr.innerHTML=`<td>${c.market_cap_rank}</td><td>${c.name}</td><td>${c.current_price.toLocaleString()}</td><td>${c.price_change_percentage_24h?.toFixed(2)||0}%</td>`;
       leaderboardTable.appendChild(tr);
     });
 
-    // All Cryptos table
-    data.forEach(c=>{
-      const tr=document.createElement("tr");
-      tr.innerHTML=`<td>${c.market_cap_rank}</td><td>${c.name}</td><td>${c.current_price.toLocaleString()}</td><td>${c.price_change_percentage_24h?.toFixed(2)||"0"}%</td><td>${c.price_change_percentage_7d_in_currency?.toFixed(2)||"0"}%</td><td>${c.price_change_percentage_30d_in_currency?.toFixed(2)||"0"}%</td>`;
-      cryptoTable.appendChild(tr);
-    });
+    updateTablePage();
 
     // Top 5 gainers & losers
-    const sorted=data.filter(c=>c.price_change_percentage_24h!==null).sort((a,b)=>b.price_change_percentage_24h-a.price_change_percentage_24h);
+    const sorted=allCoinsGlobal.filter(c=>c.price_change_percentage_24h!==null).sort((a,b)=>b.price_change_percentage_24h-a.price_change_percentage_24h);
     const topGainers=sorted.slice(0,5);
     const topLosers=sorted.slice(-5).reverse();
 
@@ -141,8 +172,33 @@ async function fetchCryptoData(){
     topLosers.forEach(c=>{const tr=document.createElement("tr");tr.innerHTML=`<td>${c.name}</td><td>${c.current_price}</td><td style="color:red">${c.price_change_percentage_24h.toFixed(2)}%</td>`;losersTable.appendChild(tr);});
 
     [...topGainers,...topLosers].forEach(c=>{const li=document.createElement("li");li.textContent=`${c.name}: ${c.price_change_percentage_24h.toFixed(2)}%`;floatingMovers.appendChild(li);});
+
   }catch(e){console.error(e);}
 }
+
+function updateTablePage(){
+  const query=searchInput.value.toLowerCase();
+  const filtered=allCoinsGlobal.filter(c=>c.name.toLowerCase().includes(query));
+  const totalPages=Math.ceil(filtered.length/pageSize);
+  if(currentPage>totalPages) currentPage=totalPages;
+  if(currentPage<1) currentPage=1;
+
+  cryptoTable.innerHTML="";
+  const start=(currentPage-1)*pageSize;
+  const pageData=filtered.slice(start,start+pageSize);
+
+  pageData.forEach(c=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${c.market_cap_rank}</td><td>${c.name}</td><td>${c.current_price.toLocaleString()}</td><td>${c.price_change_percentage_24h?.toFixed(2)||"0"}%</td><td>${c.price_change_percentage_7d_in_currency?.toFixed(2)||"0"}%</td><td>${c.price_change_percentage_30d_in_currency?.toFixed(2)||"0"}%</td>`;
+    cryptoTable.appendChild(tr);
+  });
+
+  pageInfo.textContent=`Page ${currentPage} of ${totalPages}`;
+}
+
+searchInput.addEventListener("input",()=>{currentPage=1; updateTablePage();});
+prevBtn.addEventListener("click",()=>{currentPage--; updateTablePage();});
+nextBtn.addEventListener("click",()=>{currentPage++; updateTablePage();});
 
 async function fetchNews(){
   try{
@@ -151,6 +207,20 @@ async function fetchNews(){
     data.items.slice(0,5).forEach(item=>{const li=document.createElement("li");li.innerHTML=`<a href="${item.link}" target="_blank">${item.title}</a>`;newsFeed.appendChild(li);});
   }catch(e){console.error(e); newsFeed.innerHTML="<li>Unable to load news</li>";}
 }
+
+// Minimize & Close functionality
+document.querySelectorAll('#floatingMovers, #sideBanner').forEach(widget=>{
+  const minimizeBtn = widget.querySelector('.minimize');
+  const closeBtn = widget.querySelector('.close');
+  const content = widget.querySelector('ul, .ad-slot, p');
+
+  minimizeBtn.addEventListener('click', ()=>{
+    if(content.style.display==='none'){content.style.display='block'; minimizeBtn.textContent='−';} 
+    else {content.style.display='none'; minimizeBtn.textContent='+';}
+  });
+
+  closeBtn.addEventListener('click', ()=>{widget.style.display='none';});
+});
 
 fetchCryptoData();
 fetchNews();
