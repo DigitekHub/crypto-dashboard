@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Crypto Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <!-- Chart.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body { font-family: Arial, sans-serif; margin:0; padding:20px; background:#f5f5f5; color:#333; transition: 0.3s; }
+    body.dark { background:#121212; color:#eee; }
+    h1 { text-align:center; color:#ff9900; margin-bottom:15px; }
+    table { width:100%; border-collapse:collapse; margin-bottom:20px; background:#fff; border-radius:10px; }
+    body.dark table { background:#1e1e1e; color:#eee; }
+    th, td { padding:8px; text-align:center; border-bottom:1px solid #ddd; }
+    body.dark th, body.dark td { border-bottom:1px solid #555; }
+    tr:hover { background-color:#f0f0f0; }
+    body.dark tr:hover { background-color:#333; }
+    #floatingMovers { position:fixed; bottom:20px; right:20px; width:250px; background:#fff; border-radius:10px; box-shadow:0 4px 12px rgba(0,0,0,0.2); padding:10px; font-size:14px; z-index:9999; transition: background 0.3s, color 0.3s; }
+    body.dark #floatingMovers { background:#1e1e1e; color:#eee; }
+    .controls { text-align:center; margin-bottom:15px; }
+    select, button { padding:8px 12px; font-size:16px; border-radius:8px; border:1px solid #ccc; cursor:pointer; }
+    button { margin-left:10px; }
+    a { color:#ff9900; text-decoration:none; }
+  </style>
+</head>
+<body>
+
+  <h1>Top 50 Crypto Dashboard</h1>
+
+  <!-- Controls -->
+  <div class="controls">
+    <label for="currency">Currency:</label>
+    <select id="currency"></select>
+    <button id="themeToggle">Toggle Dark/Light Mode</button>
+  </div>
+
+  <!-- Top Gainers -->
+  <h2>Top 5 Gainers</h2>
+  <table id="gainersTable">
+    <thead><tr><th>Name</th><th>Price</th><th>24h Change</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <!-- Top Losers -->
+  <h2>Top 5 Losers</h2>
+  <table id="losersTable">
+    <thead><tr><th>Name</th><th>Price</th><th>24h Change</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <!-- All Cryptos -->
+  <h2>All Cryptos</h2>
+  <table id="cryptoTable">
+    <thead><tr><th>#</th><th>Name</th><th>Price</th><th>24h</th><th>7d</th><th>30d</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <!-- Floating Top Movers -->
+  <div id="floatingMovers">
+    <h3>Top Movers</h3>
+    <ul></ul>
+  </div>
+
+  <!-- Crypto News -->
+  <h2>Latest Crypto News</h2>
+  <ul id="cryptoNewsFeed"></ul>
+
+  <footer style="text-align:center; margin-top:20px;">
+    Powered by <a href="https://www.coingecko.com/en/api" target="_blank">CoinGecko API</a>
+  </footer>
+
+  <script>
+    const currencySelect = document.getElementById("currency");
+    const cryptoTable = document.getElementById("cryptoTable").querySelector("tbody");
+    const gainersTable = document.getElementById("gainersTable").querySelector("tbody");
+    const losersTable = document.getElementById("losersTable").querySelector("tbody");
+    const floatingMovers = document.getElementById("floatingMovers").querySelector("ul");
+    const newsFeed = document.getElementById("cryptoNewsFeed");
+
+    const currencies = ["usd","eur","gbp"];
+    currencies.forEach(c => {
+      const opt = document.createElement("option");
+      opt.value = c; opt.textContent = c.toUpperCase();
+      currencySelect.appendChild(opt);
+    });
+
+    currencySelect.addEventListener("change", fetchCryptoData);
+    document.getElementById("themeToggle").addEventListener("click", () => {
+      document.body.classList.toggle("dark");
+      localStorage.setItem("theme", document.body.classList.contains("dark")?"dark":"light");
+    });
+    if(localStorage.getItem("theme")==="dark") document.body.classList.add("dark");
+
+    async function fetchCryptoData() {
+      const cur = currencySelect.value;
+      cryptoTable.innerHTML=""; gainersTable.innerHTML=""; losersTable.innerHTML=""; floatingMovers.innerHTML="";
+
+      try {
+        const res = await fetch(`https://api.coingecko.com/api/v3/coins/markets?vs_currency=${cur}&order=market_cap_desc&per_page=50&page=1&sparkline=false&price_change_percentage=24h,7d,30d`);
+        const data = await res.json();
+
+        // Main table
+        data.forEach(c => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${c.market_cap_rank}</td>
+                          <td>${c.name}</td>
+                          <td>${c.current_price.toLocaleString()}</td>
+                          <td>${c.price_change_percentage_24h?.toFixed(2)||"0"}%</td>
+                          <td>${c.price_change_percentage_7d_in_currency?.toFixed(2)||"0"}%</td>
+                          <td>${c.price_change_percentage_30d_in_currency?.toFixed(2)||"0"}%</td>`;
+          cryptoTable.appendChild(tr);
+        });
+
+        // Top 5 gainers & losers
+        const sorted = data.filter(c=>c.price_change_percentage_24h!==null).sort((a,b)=>b.price_change_percentage_24h-a.price_change_percentage_24h);
+        const topGainers = sorted.slice(0,5);
+        const topLosers = sorted.slice(-5).reverse();
+
+        topGainers.forEach(c => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${c.name}</td><td>${c.current_price}</td><td style="color:green">${c.price_change_percentage_24h.toFixed(2)}%</td>`;
+          gainersTable.appendChild(tr);
+        });
+
+        topLosers.forEach(c => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${c.name}</td><td>${c.current_price}</td><td style="color:red">${c.price_change_percentage_24h.toFixed(2)}%</td>`;
+          losersTable.appendChild(tr);
+        });
+
+        [...topGainers,...topLosers].forEach(c => {
+          const li = document.createElement("li");
+          li.textContent = `${c.name}: ${c.price_change_percentage_24h.toFixed(2)}%`;
+          floatingMovers.appendChild(li);
+        });
+
+      } catch(e){ console.error(e); }
+    }
+
+    async function fetchNews() {
+      try {
+        const res = await fetch("https://api.rss2json.com/v1/api.json?rss_url=" + encodeURIComponent("https://www.coindesk.com/arc/outboundfeeds/rss/"));
+        const data = await res.json();
+        newsFeed.innerHTML="";
+        data.items.slice(0,5).forEach(item=>{
+          const li = document.createElement("li");
+          li.innerHTML=`<a href="${item.link}" target="_blank">${item.title}</a>`;
+          newsFeed.appendChild(li);
+        });
+      } catch(e){ console.error(e); newsFeed.innerHTML="<li>Unable to load news</li>"; }
+    }
+
+    fetchCryptoData();
+    fetchNews();
+    setInterval(fetchCryptoData,60000);
+    setInterval(fetchNews,900000);
+  </script>
+
+</body>
+</html>
